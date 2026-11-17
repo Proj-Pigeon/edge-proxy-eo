@@ -1,0 +1,14 @@
+{
+  "name": "edge-proxy-eo",
+  "version": "1.0.0",
+  "description": "GuEarth serverless mirror proxy built on EdgeOne Maker Node Functions",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.spec.js",
+    "test:smoke": "node test/run.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "cloudFunctions": {
+    "nodejs": {
+      "maxDuration": 10
+    }
+  },
+  "headers": [
+    {
+      "source": "/*",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    }
+  ],
+  "caches": [
+    {
+      "source": "/tiles/*",
+      "cacheTtl": 2592000
+    },
+    {
+      "source": "/arcgis/*",
+      "cacheTtl": 86400
+    },
+    {
+      "source": "/datasets/earthquakes",
+      "cacheTtl": 600
+    },
+    {
+      "source": "/modelsdev",
+      "cacheTtl": 21600
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+node_modules/
+.edgeone/
+dist/
+coverage/
+*.log
+.DS_Store
