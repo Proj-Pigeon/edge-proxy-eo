@@ -15,6 +15,11 @@ import { onRequestGet as arcgisMetaGet } from '../cloud-functions/arcgis/index.j
 import { onRequestGet as arcgisTileGet } from '../cloud-functions/arcgis/[[tile]].js';
 import { onRequestGet as earthquakesGet } from '../cloud-functions/datasets/earthquakes.js';
 import { onRequestGet as modelsDevGet } from '../cloud-functions/modelsdev.js';
+import { onRequestGet as updateGet } from '../cloud-functions/update/[platform]/[version]/index.js';
+import { onRequestGet as updateReleasesGet } from '../cloud-functions/update/[platform]/[version]/RELEASES.js';
+import { onRequestGet as downloadAutoGet } from '../cloud-functions/download/index.js';
+import { onRequestGet as downloadLatestGet } from '../cloud-functions/download/[platform]/index.js';
+import { onRequestGet as downloadAssetGet } from '../cloud-functions/download/[platform]/[[file]].js';
 import { onRequestGet as healthGet } from '../cloud-functions/health.js';
 import { onRequestGet as rootGet } from '../cloud-functions/index.js';
 
@@ -122,6 +127,63 @@ await test('OSM, Esri, OpenTopo, VIIRS, ArcGIS, USGS, models.dev route handlers'
   res = await modelsDevGet({ request: new Request('https://m.test/modelsdev') });
   assert.equal(res.status, 200);
   assert.equal(calls.at(-1).url, 'https://models.dev/api.json');
+
+  res = await downloadAssetGet({
+    request: new Request('https://m.test/download/win32/v0.1.17/guearth-0.1.17-x64-setup.exe'),
+    params: { platform: 'win32', file: ['v0.1.17', 'guearth-0.1.17-x64-setup.exe'] },
+  });
+  assert.equal(res.status, 200);
+  assert.equal(
+    calls.at(-1).url,
+    'https://github.com/Proj-Pigeon/GuEarth/releases/download/v0.1.17/guearth-0.1.17-x64-setup.exe'
+  );
+
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return new Response(null, { status: 204 });
+  };
+  res = await updateGet({
+    request: new Request('https://m.test/update/win32/0.1.17'),
+    params: { platform: 'win32', version: '0.1.17' },
+  });
+  assert.equal(res.status, 204);
+  assert.equal(calls.at(-1).url, 'https://guearth-updater.isla.fan/update/win32/0.1.17');
+
+  res = await updateReleasesGet({
+    request: new Request('https://m.test/update/win32/0.1.17/RELEASES'),
+    params: { platform: 'win32', version: '0.1.17' },
+  });
+  assert.equal(res.status, 204);
+  assert.equal(calls.at(-1).url, 'https://guearth-updater.isla.fan/update/win32/0.1.17/RELEASES');
+
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location:
+          'https://github.com/Proj-Pigeon/GuEarth/releases/download/v0.1.17/guearth-0.1.17-x64-setup.exe',
+      },
+    });
+  };
+  res = await downloadAutoGet({
+    request: new Request('https://m.test/download', { headers: { 'User-Agent': 'Windows' } }),
+  });
+  assert.equal(res.status, 302);
+  assert.equal(
+    res.headers.get('Location'),
+    'https://m.test/download/auto/v0.1.17/guearth-0.1.17-x64-setup.exe'
+  );
+
+  res = await downloadLatestGet({
+    request: new Request('https://m.test/download/AppImage'),
+    params: { platform: 'AppImage' },
+  });
+  assert.equal(res.status, 302);
+  assert.equal(
+    res.headers.get('Location'),
+    'https://m.test/download/AppImage/v0.1.17/guearth-0.1.17-x64-setup.exe'
+  );
 
   const hRes = await healthGet();
   assert.equal(hRes.status, 200);

@@ -1,7 +1,7 @@
 {
   "cloudFunctions": {
     "nodejs": {
-      "maxDuration": 10
+      "maxDuration": 120
     }
   },
   "headers": [
@@ -35,6 +35,18 @@
     {
       "source": "/modelsdev",
       "cacheTtl": 21600
+    },
+    {
+      "source": "/update/*",
+      "cacheTtl": 300
+    },
+    {
+      "source": "/download/:platform",
+      "cacheTtl": 300
+    },
+    {
+      "source": "/download/:platform/:tag/:file",
+      "cacheTtl": 2592000
     }
   ]
 }

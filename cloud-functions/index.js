@@ -50,6 +50,31 @@ export const SERVICE_MANIFEST = {
       sMaxage: 21600,
     },
     {
+      path: '/update/{platform}/{version}',
+      upstream: 'https://guearth-updater.isla.fan/update/{platform}/{version}',
+      sMaxage: 300,
+    },
+    {
+      path: '/update/{platform}/{version}/RELEASES',
+      upstream: 'https://guearth-updater.isla.fan/update/{platform}/{version}/RELEASES',
+      sMaxage: 300,
+    },
+    {
+      path: '/download',
+      upstream: 'https://guearth-updater.isla.fan/download',
+      sMaxage: 0,
+    },
+    {
+      path: '/download/{platform}',
+      upstream: 'https://guearth-updater.isla.fan/download/{platform}',
+      sMaxage: 300,
+    },
+    {
+      path: '/download/{platform}/{tag}/{file}',
+      upstream: 'https://github.com/Proj-Pigeon/GuEarth/releases/download/{tag}/{file}',
+      sMaxage: 2592000,
+    },
+    {
       path: '/health',
       upstream: null,
       sMaxage: 0,

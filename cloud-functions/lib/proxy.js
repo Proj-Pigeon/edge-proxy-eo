@@ -104,6 +104,7 @@ export async function fetchUpstream(upstreamUrl, {
   timeoutMs = DEFAULT_TIMEOUT_MS,
   accept = '*/*',
   method = 'GET',
+  redirect = 'follow',
 } = {}) {
   const headers = new Headers({
     'User-Agent': userAgent,
@@ -124,9 +125,85 @@ export async function fetchUpstream(upstreamUrl, {
   return fetch(upstreamUrl, {
     method,
     headers,
-    redirect: 'follow',
+    redirect,
     signal: AbortSignal.timeout(timeoutMs),
   });
+}
+
+/**
+ * Fetch an upstream URL and map network / timeout errors to edge JSON error responses.
+ */
+export async function fetchUpstreamSafe(upstreamUrl, opts) {
+  try {
+    const response = await fetchUpstream(upstreamUrl, opts);
+    return { ok: true, response };
+  } catch (err) {
+    const isTimeout =
+      err?.name === 'TimeoutError' ||
+      err?.name === 'AbortError' ||
+      /timeout|aborted/i.test(String(err?.message || ''));
+    if (isTimeout) {
+      return {
+        ok: false,
+        errorResponse: jsonError(504, 'Upstream request timed out', { upstream: upstreamUrl }),
+      };
+    }
+    return {
+      ok: false,
+      errorResponse: jsonError(502, 'Upstream fetch failed', {
+        upstream: upstreamUrl,
+        detail: err?.message || String(err),
+      }),
+    };
+  }
+}
+
+/**
+ * Map non-2xx upstream status codes to 404 or 502 edge JSON error responses.
+ */
+export function mapUpstreamErrorStatus(upstreamRes, upstreamUrl) {
+  if (upstreamRes.status === 404 || upstreamRes.status === 400 || upstreamRes.status === 410) {
+    return jsonError(404, 'Upstream resource not found', {
+      upstream: upstreamUrl,
+      upstreamStatus: upstreamRes.status,
+    });
+  }
+  return jsonError(502, `Upstream returned HTTP ${upstreamRes.status}`, {
+    upstream: upstreamUrl,
+    upstreamStatus: upstreamRes.status,
+  });
+}
+
+/**
+ * Build base CORS and security headers shared by edge proxy responses.
+ */
+export function buildBaseHeaders(cacheControl, upstreamUrl, extra = {}) {
+  const headers = new Headers({
+    'Cache-Control': cacheControl,
+    'Access-Control-Allow-Origin': '*',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  if (upstreamUrl) {
+    headers.set('X-Proxy-Upstream', upstreamUrl);
+  }
+  for (const [key, value] of Object.entries(extra)) {
+    if (value !== undefined && value !== null) {
+      headers.set(key, value);
+    }
+  }
+  return headers;
+}
+
+/**
+ * Build a 304 Not Modified response preserving ETag / Last-Modified headers.
+ */
+export function buildNotModifiedResponse(upstreamRes, cacheControl, upstreamUrl, extra = {}) {
+  const headers = buildBaseHeaders(cacheControl, upstreamUrl, extra);
+  for (const h of ['etag', 'last-modified']) {
+    const val = upstreamRes.headers.get(h);
+    if (val) headers.set(h, val);
+  }
+  return new Response(null, { status: 304, headers });
 }
 
 /**
@@ -145,71 +222,40 @@ export async function proxyResponse(context, upstreamUrl, {
     return jsonError(405, `Method ${method} not allowed`);
   }
 
-  let upstreamRes;
-  try {
-    upstreamRes = await fetchUpstream(upstreamUrl, {
-      request,
-      userAgent,
-      timeoutMs,
-      accept,
-      method,
-    });
-  } catch (err) {
-    const isTimeout =
-      err?.name === 'TimeoutError' ||
-      err?.name === 'AbortError' ||
-      /timeout|aborted/i.test(String(err?.message || ''));
-    if (isTimeout) {
-      return jsonError(504, 'Upstream request timed out', { upstream: upstreamUrl });
-    }
-    return jsonError(502, 'Upstream fetch failed', {
-      upstream: upstreamUrl,
-      detail: err?.message || String(err),
-    });
+  const fetched = await fetchUpstreamSafe(upstreamUrl, {
+    request,
+    userAgent,
+    timeoutMs,
+    accept,
+    method,
+  });
+  if (!fetched.ok) {
+    return fetched.errorResponse;
   }
+  const upstreamRes = fetched.response;
 
   const cacheControl = buildCacheControl({ sMaxage, maxAge });
 
   // Handle 304 Not Modified
   if (upstreamRes.status === 304) {
-    const headers = new Headers({
-      'Cache-Control': cacheControl,
-      'Access-Control-Allow-Origin': '*',
-      'X-Content-Type-Options': 'nosniff',
-      'X-Proxy-Upstream': upstreamUrl,
-    });
-    for (const h of ['etag', 'last-modified']) {
-      const val = upstreamRes.headers.get(h);
-      if (val) headers.set(h, val);
-    }
-    return new Response(null, { status: 304, headers });
+    return buildNotModifiedResponse(upstreamRes, cacheControl, upstreamUrl);
   }
 
   // Handle upstream 404 / 400 / 410 as 404 Not Found with no-store
   if (upstreamRes.status === 404 || upstreamRes.status === 400 || upstreamRes.status === 410) {
-    return jsonError(404, 'Upstream resource not found', {
-      upstream: upstreamUrl,
-      upstreamStatus: upstreamRes.status,
-    });
+    return mapUpstreamErrorStatus(upstreamRes, upstreamUrl);
   }
 
   // Handle upstream 5xx or other non-2xx errors as 502 Bad Gateway with no-store
   if (!upstreamRes.ok) {
-    return jsonError(502, `Upstream returned HTTP ${upstreamRes.status}`, {
-      upstream: upstreamUrl,
-      upstreamStatus: upstreamRes.status,
-    });
+    return mapUpstreamErrorStatus(upstreamRes, upstreamUrl);
   }
 
-  const resHeaders = new Headers();
+  const resHeaders = buildBaseHeaders(cacheControl, upstreamUrl);
   for (const h of PASSTHROUGH_RESPONSE_HEADERS) {
     const val = upstreamRes.headers.get(h);
     if (val) resHeaders.set(h, val);
   }
-  resHeaders.set('Cache-Control', cacheControl);
-  resHeaders.set('Access-Control-Allow-Origin', '*');
-  resHeaders.set('X-Content-Type-Options', 'nosniff');
-  resHeaders.set('X-Proxy-Upstream', upstreamUrl);
 
   const body = method === 'HEAD' ? null : upstreamRes.body;
   return new Response(body, {
