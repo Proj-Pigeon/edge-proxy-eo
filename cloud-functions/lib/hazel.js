@@ -24,8 +24,6 @@ const GITHUB_ASSET_URL_RE =
 
 const DIRECT_PASSTHROUGH_HEADERS = [
   'content-type',
-  'content-length',
-  'content-encoding',
   'content-disposition',
   'etag',
   'last-modified',
@@ -248,6 +246,10 @@ export async function proxyHazelDownloadRedirect(
   for (const h of DIRECT_PASSTHROUGH_HEADERS) {
     const val = upstreamRes.headers.get(h);
     if (val) resHeaders.set(h, val);
+  }
+  if (!upstreamRes.headers.get('content-encoding')) {
+    const contentLength = upstreamRes.headers.get('content-length');
+    if (contentLength) resHeaders.set('content-length', contentLength);
   }
 
   const body = method === 'HEAD' ? null : upstreamRes.body;

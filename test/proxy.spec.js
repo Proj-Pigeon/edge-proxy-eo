@@ -56,8 +56,31 @@ describe('proxyResponse behavior', () => {
 
     assert.equal(res.status, 404);
     assert.equal(res.headers.get('Cache-Control'), 'no-store');
+    assert.equal(res.headers.get('X-Proxy-Upstream'), 'https://tile.openstreetmap.org/0/0/0.png');
     const body = await res.json();
     assert.equal(body.status, 404);
+  });
+
+  it('strips content-encoding and compressed content-length from decompressed upstream responses', async () => {
+    globalThis.fetch = async () =>
+      new Response('{"ok":true}', {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Encoding': 'br',
+          'Content-Length': '5',
+        },
+      });
+
+    const res = await proxyResponse(
+      { request: new Request('https://mirror.example.com/datasets/earthquakes') },
+      'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_month.geojson'
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('Content-Encoding'), null);
+    assert.equal(res.headers.get('Content-Length'), null);
+    assert.equal(await res.text(), '{"ok":true}');
   });
 
   it('maps upstream 5xx to 502 Bad Gateway with Cache-Control: no-store', async () => {

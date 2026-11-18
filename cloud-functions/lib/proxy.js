@@ -8,8 +8,6 @@ const INT_RE = /^\d+$/;
 
 const PASSTHROUGH_RESPONSE_HEADERS = [
   'content-type',
-  'content-length',
-  'content-encoding',
   'etag',
   'last-modified',
 ];
@@ -163,15 +161,19 @@ export async function fetchUpstreamSafe(upstreamUrl, opts) {
  */
 export function mapUpstreamErrorStatus(upstreamRes, upstreamUrl) {
   if (upstreamRes.status === 404 || upstreamRes.status === 400 || upstreamRes.status === 410) {
-    return jsonError(404, 'Upstream resource not found', {
+    const res = jsonError(404, 'Upstream resource not found', {
       upstream: upstreamUrl,
       upstreamStatus: upstreamRes.status,
     });
+    res.headers.set('X-Proxy-Upstream', upstreamUrl);
+    return res;
   }
-  return jsonError(502, `Upstream returned HTTP ${upstreamRes.status}`, {
+  const res = jsonError(502, `Upstream returned HTTP ${upstreamRes.status}`, {
     upstream: upstreamUrl,
     upstreamStatus: upstreamRes.status,
   });
+  res.headers.set('X-Proxy-Upstream', upstreamUrl);
+  return res;
 }
 
 /**
@@ -255,6 +257,10 @@ export async function proxyResponse(context, upstreamUrl, {
   for (const h of PASSTHROUGH_RESPONSE_HEADERS) {
     const val = upstreamRes.headers.get(h);
     if (val) resHeaders.set(h, val);
+  }
+  if (!upstreamRes.headers.get('content-encoding')) {
+    const contentLength = upstreamRes.headers.get('content-length');
+    if (contentLength) resHeaders.set('content-length', contentLength);
   }
 
   const body = method === 'HEAD' ? null : upstreamRes.body;

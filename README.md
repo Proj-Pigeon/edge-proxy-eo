@@ -34,9 +34,9 @@ edge-proxy-eo/
 │   │           └── RELEASES.js                    # GET /update/{platform}/{version}/RELEASES
 │   └── download/
 │       ├── index.js                               # GET /download
+│       ├── [[path]].js                            # GET /download/{platform}/{tag}/{file}
 │       └── [platform]/
-│           ├── index.js                           # GET /download/{platform}
-│           └── [[file]].js                        # GET /download/{platform}/{tag}/{file}
+│           └── index.js                           # GET /download/{platform}
 └── test/
     ├── hazel.spec.js
     ├── parse.spec.js

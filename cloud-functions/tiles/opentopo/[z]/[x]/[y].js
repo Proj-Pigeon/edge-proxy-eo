@@ -7,10 +7,12 @@ export const buildOpenTopoTileUrl = ({ z, x, y }) => {
   return `https://${sub}.tile.opentopomap.org/${z}/${x}/${y}.png`;
 };
 
-export const { onRequestGet, onRequestHead } = createTileHandlers({
+const { onRequestGet, onRequestHead } = createTileHandlers({
   buildUrl: buildOpenTopoTileUrl,
   maxLevel: 17,
   sMaxage: 2592000, // 30 days
   maxAge: 604800,   // 7 days
   yExt: '.png',
 });
+
+export { onRequestGet, onRequestHead };

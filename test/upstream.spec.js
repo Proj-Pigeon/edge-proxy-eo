@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { onRequestGet as osmGet } from '../cloud-functions/tiles/osm/[z]/[x]/[y].js';
 import { onRequestGet as esriGet } from '../cloud-functions/tiles/esri/[z]/[y]/[x].js';
 import { onRequestGet as openTopoGet } from '../cloud-functions/tiles/opentopo/[z]/[x]/[y].js';
@@ -170,6 +171,38 @@ describe('Route upstream URL construction & validation', () => {
     assert.equal(mdRes.status, 200);
     assert.equal(calls[0].url, 'https://models.dev/api.json');
     assert.equal(mdRes.headers.get('Cache-Control'), 'public, s-maxage=21600, max-age=3600');
+  });
+
+  it('compresses large /modelsdev payloads using br or gzip when Accept-Encoding allows', async () => {
+    const bigJson = JSON.stringify({ data: 'x'.repeat(300 * 1024) });
+    globalThis.fetch = async () =>
+      new Response(bigJson, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+    const brRes = await modelsDevGet({
+      request: new Request('https://mirror.example.com/modelsdev', {
+        headers: { 'Accept-Encoding': 'gzip, deflate, br' },
+      }),
+    });
+    assert.equal(brRes.status, 200);
+    assert.equal(brRes.headers.get('Content-Encoding'), 'br');
+    assert.equal(brRes.headers.get('Vary'), 'Accept-Encoding');
+    const brBytes = Buffer.from(await brRes.arrayBuffer());
+    assert.ok(brBytes.byteLength < 100 * 1024);
+    assert.equal(brotliDecompressSync(brBytes).toString('utf8'), bigJson);
+
+    const gzRes = await modelsDevGet({
+      request: new Request('https://mirror.example.com/modelsdev', {
+        headers: { 'Accept-Encoding': 'gzip' },
+      }),
+    });
+    assert.equal(gzRes.status, 200);
+    assert.equal(gzRes.headers.get('Content-Encoding'), 'gzip');
+    const gzBytes = Buffer.from(await gzRes.arrayBuffer());
+    assert.ok(gzBytes.byteLength < 100 * 1024);
+    assert.equal(gunzipSync(gzBytes).toString('utf8'), bigJson);
   });
 
   it('serves /health and / manifest locally with no-store', async () => {

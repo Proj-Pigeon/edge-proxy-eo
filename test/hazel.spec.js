@@ -29,7 +29,7 @@ import {
 import {
   onRequestGet as downloadAssetGet,
   onRequestHead as downloadAssetHead,
-} from '../cloud-functions/download/[platform]/[[file]].js';
+} from '../cloud-functions/download/[[path]].js';
 import { onRequestGet as rootGet } from '../cloud-functions/index.js';
 
 describe('Hazel helpers and validation', () => {
@@ -306,8 +306,7 @@ describe('Hazel update & download route handlers', () => {
         'https://proxy.example.com/download/win32/v0.1.17/guearth-0.1.17-x64-setup.exe'
       ),
       params: {
-        platform: 'win32',
-        file: ['v0.1.17', 'guearth-0.1.17-x64-setup.exe'],
+        path: ['win32', 'v0.1.17', 'guearth-0.1.17-x64-setup.exe'],
       },
     });
 
@@ -328,12 +327,32 @@ describe('Hazel update & download route handlers', () => {
         { method: 'HEAD' }
       ),
       params: {
-        platform: 'win32',
-        file: 'v0.1.17/guearth-0.1.17-x64-setup.exe',
+        path: 'win32/v0.1.17/guearth-0.1.17-x64-setup.exe',
       },
     });
     assert.equal(headRes.status, 200);
     assert.equal(await headRes.text(), '');
+
+    // Supports 1-segment /download/{platform} fallback in [[path]].js
+    calls = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url, init });
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location:
+            'https://github.com/Proj-Pigeon/GuEarth/releases/download/v0.1.17/guearth-0.1.17-x64-setup.exe',
+        },
+      });
+    };
+    const fallbackRedirect = await downloadAssetGet({
+      request: new Request('https://proxy.example.com/download/win32'),
+    });
+    assert.equal(fallbackRedirect.status, 302);
+    assert.equal(
+      fallbackRedirect.headers.get('Location'),
+      'https://proxy.example.com/download/win32/v0.1.17/guearth-0.1.17-x64-setup.exe'
+    );
   });
 
   it('handles 304 passthrough and rejects malformed /download asset paths', async () => {
@@ -348,8 +367,7 @@ describe('Hazel update & download route handlers', () => {
         { headers: { 'If-None-Match': '"asset-etag"' } }
       ),
       params: {
-        platform: 'win32',
-        file: ['v0.1.17', 'guearth-0.1.17-x64-setup.exe'],
+        path: ['win32', 'v0.1.17', 'guearth-0.1.17-x64-setup.exe'],
       },
     });
     assert.equal(notModified.status, 304);
@@ -357,11 +375,12 @@ describe('Hazel update & download route handlers', () => {
 
     calls = [];
     for (const badParams of [
-      { platform: 'win32', file: ['RELEASES'] },
-      { platform: 'win32', file: ['v0.1.17', 'a', 'b'] },
-      { platform: 'win32', file: ['..', 'app.exe'] },
-      { platform: 'win32', file: ['v0.1.17', '../secret.exe'] },
-      { platform: 'win32', file: ['v0.1.17', '%2e%2e'] },
+      { path: ['win32', 'RELEASES'] },
+      { path: ['win32', 'v0.1.17', 'a', 'b'] },
+      { path: ['win32', '..', 'app.exe'] },
+      { path: ['win32', 'v0.1.17', '../secret.exe'] },
+      { path: ['win32', 'v0.1.17', '%2e%2e'] },
+      { path: ['win32.exe', 'v0.1.17', 'app.exe'] },
     ]) {
       const badRes = await downloadAssetGet({
         request: new Request('https://proxy.example.com/download/win32/bad'),
